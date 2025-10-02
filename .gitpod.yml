@@ -1,0 +1,20 @@
+image: gitpod/workspace-full
+
+tasks:
+  - name: Setup Flutter 3.24.3
+    init: |
+      wget -q https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.3-stable.tar.xz
+      tar -xf flutter_linux_3.24.3-stable.tar.xz
+      echo 'export PATH=/workspace/flutter/bin:$PATH' >> ~/.bashrc
+      source ~/.bashrc
+      flutter --version
+      flutter config --enable-web
+      flutter pub get
+    command: |
+      source ~/.bashrc
+      flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0
+
+ports:
+  - port: 8080
+    onOpen: open-preview
+    visibility: public
