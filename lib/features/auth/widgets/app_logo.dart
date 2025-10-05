@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/theme_v2.dart';
 
 class AppLogo extends StatelessWidget {
   final String? subtitle;
