@@ -9,7 +9,6 @@ environment:
 
 dependencies:
   sqflite_common_ffi: ^2.3.3
-
   flutter:
     sdk: flutter
 
@@ -38,7 +37,7 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
-
+    - assets/images/logo.png
   # Fonts (add your font files later if needed)
   # fonts:
   #   - family: Inter

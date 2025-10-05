@@ -18,6 +18,7 @@ class UsageHistoryScreen extends ConsumerStatefulWidget {
 class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
   // 0: Today, 1: This Week, 2: This Month, 3: Custom (same as Month for now)
   int _selected = 0;
+  final Set<int> _removedIds = {}; // hide dismissed rows immediately
 
   // ---------- SEEDING HELPERS ----------
   Future<void> _addRandom() async {
@@ -71,6 +72,47 @@ class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
 
     return Scaffold(
       backgroundColor: AppThemeV2.bgNavy,
+      appBar: AppBar(
+        title: const Text('Usage History'),
+        backgroundColor: Colors.black.withOpacity(0.15),
+        actions: [
+          IconButton(
+            tooltip: 'Clear all usage',
+            icon: const Icon(Icons.delete_sweep),
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Clear all usage?'),
+                  content: const Text(
+                    'This deletes every usage entry. This cannot be undone.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Delete All'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok == true) {
+                await ref.read(clearAllUsageProvider.future);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('All usage cleared')),
+                );
+                setState(() {
+                  _removedIds.clear();
+                });
+              }
+            },
+          ),
+        ],
+      ),
 
       // FABs to seed data quickly
       floatingActionButton: Column(
@@ -136,38 +178,122 @@ class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
               Expanded(
                 child: asyncList.when(
                   data: (items) {
-                    final filtered = _applyFilter(items, _selected);
+                    var filtered = _applyFilter(items, _selected);
+
+                    // Hide any rows we already dismissed optimistically
+                    filtered = filtered.where((e) {
+                      final id = e.id;
+                      return id == null ? true : !_removedIds.contains(id);
+                    }).toList();
+
                     if (filtered.isEmpty) {
                       return const _EmptyState();
                     }
+
                     return ListView.separated(
                       itemCount: filtered.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, i) {
                         final e = filtered[i];
                         final subtitle = _formatRange(e.start, e.duration);
-                        return ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+
+                        return Dismissible(
+                          key: ValueKey(
+                            e.id ?? '${e.start.millisecondsSinceEpoch}-$i',
                           ),
-                          tileColor: const Color(0x14FFFFFF),
-                          title: Text(
-                            e.activity,
-                            style: const TextStyle(
+                          background: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: const Icon(
+                              Icons.delete,
                               color: Colors.white,
-                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                          subtitle: Text(
-                            subtitle,
-                            style: const TextStyle(color: Colors.white70),
+                          secondaryBackground: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: const Icon(
+                              Icons.delete,
+                              color: Colors.white,
+                            ),
                           ),
-                          trailing: const Icon(
-                            Icons.chevron_right,
-                            color: Colors.white70,
+                          confirmDismiss: (_) async {
+                            if (e.id == null) return false;
+
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Delete entry?'),
+                                content: Text('${e.activity}\n$subtitle'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (ok != true) return false;
+
+                            // Optimistically hide now so the next build excludes it
+                            setState(() {
+                              _removedIds.add(e.id!);
+                            });
+
+                            // Real delete (invalidates providers)
+                            await ref.read(
+                              deleteUsageEntryProvider(e.id!).future,
+                            );
+
+                            return true;
+                          },
+                          onDismissed: (_) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Entry deleted')),
+                            );
+                          },
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            tileColor: const Color(0x14FFFFFF),
+                            title: Text(
+                              e.activity,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              subtitle,
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                            trailing: const Icon(
+                              Icons.chevron_right,
+                              color: Colors.white70,
+                            ),
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/usage/detail',
+                              arguments: e, // pass entry with id for editing
+                            ),
                           ),
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/usage/detail'),
                         );
                       },
                     );

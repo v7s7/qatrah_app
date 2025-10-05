@@ -18,8 +18,9 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
   late TextEditingController _litersCtrl;
 
   late DateTime _start;
+  int? _entryId; // null => create, non-null => update same row
 
-  bool _didInit = false; // <-- guard
+  bool _didInit = false; // guard
 
   @override
   void didChangeDependencies() {
@@ -27,22 +28,41 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
     if (_didInit) return;
     _didInit = true;
 
-    // SAFE to read ModalRoute here
     final args = ModalRoute.of(context)?.settings.arguments;
-    final draft = (args is UsageDraft)
-        ? args
-        : UsageDraft.from(
-            activity: 'Washing Dishes',
-            duration: const Duration(minutes: 10),
-            liters: 8,
-          );
 
-    _activityCtrl = TextEditingController(text: draft.activity);
-    _durationCtrl = TextEditingController(
-      text: draft.duration.inMinutes.toString(),
-    );
-    _litersCtrl = TextEditingController(text: draft.liters.toStringAsFixed(0));
-    _start = draft.start;
+    if (args is UsageEntry) {
+      // Editing an existing entry
+      _entryId = args.id;
+      _start = args.start;
+      _activityCtrl = TextEditingController(text: args.activity);
+      _durationCtrl = TextEditingController(
+        text: args.duration.inMinutes.toString(),
+      );
+      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(0));
+    } else if (args is UsageDraft) {
+      // Creating from a draft
+      _entryId = null;
+      _start = args.start;
+      _activityCtrl = TextEditingController(text: args.activity);
+      _durationCtrl = TextEditingController(
+        text: args.duration.inMinutes.toString(),
+      );
+      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(0));
+    } else {
+      // Fallback new-entry template
+      final d = UsageDraft.from(
+        activity: 'Washing Dishes',
+        duration: const Duration(minutes: 10),
+        liters: 8,
+      );
+      _entryId = null;
+      _start = d.start;
+      _activityCtrl = TextEditingController(text: d.activity);
+      _durationCtrl = TextEditingController(
+        text: d.duration.inMinutes.toString(),
+      );
+      _litersCtrl = TextEditingController(text: d.liters.toStringAsFixed(0));
+    }
   }
 
   @override
@@ -55,10 +75,12 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isUpdate = _entryId != null;
+
     return Scaffold(
       backgroundColor: AppThemeV2.bgNavy,
       appBar: AppBar(
-        title: const Text('Washing history'),
+        title: Text(isUpdate ? 'Edit usage' : 'New usage'),
         backgroundColor: Colors.black.withOpacity(0.15),
       ),
       body: SafeArea(
@@ -83,7 +105,7 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
               ),
               const SizedBox(height: 24),
               SizedBox(
-                width: 180,
+                width: 200,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
@@ -95,10 +117,9 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                         int.tryParse(_durationCtrl.text.trim()) ?? 0;
                     final liters =
                         double.tryParse(_litersCtrl.text.trim()) ?? 0;
+                    final activity = _activityCtrl.text.trim();
 
-                    if (_activityCtrl.text.trim().isEmpty ||
-                        minutes <= 0 ||
-                        liters <= 0) {
+                    if (activity.isEmpty || minutes <= 0 || liters <= 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Please enter valid values'),
@@ -108,24 +129,31 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                     }
 
                     final entry = UsageEntry(
-                      activity: _activityCtrl.text.trim(),
+                      id: _entryId, // keep id if present (update)
+                      activity: activity,
                       start: _start,
                       duration: Duration(minutes: minutes),
                       liters: liters,
                     );
 
-                    await ref.read(addUsageEntryProvider(entry).future);
+                    if (isUpdate) {
+                      await ref.read(updateUsageEntryProvider(entry).future);
+                    } else {
+                      await ref.read(addUsageEntryProvider(entry).future);
+                    }
 
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Usage saved'),
+                      SnackBar(
+                        content: Text(
+                          isUpdate ? 'Usage updated' : 'Usage saved',
+                        ),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
                     Navigator.pop(context);
                   },
-                  child: const Text('Save usage'),
+                  child: Text(isUpdate ? 'Update usage' : 'Save usage'),
                 ),
               ),
             ],
