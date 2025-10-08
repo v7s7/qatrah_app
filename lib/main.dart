@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show kDebugMode; // <-- dev flag
 import 'package:flutter_riverpod/flutter_riverpod.dart'; // ProviderScope
 import 'core/theme/theme_v2.dart';
 import 'core/services/db_bootstrap.dart'; // desktop sqflite FFI bootstrap
-import 'core/services/db/app_database.dart'; // DB reset helpers
+// import 'core/services/db/app_database.dart'; // DB reset helpers
 
 // Auth screens
 import 'features/auth/screens/splash_screen.dart';
