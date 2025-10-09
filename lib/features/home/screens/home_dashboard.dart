@@ -8,13 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/theme_v2.dart';
 import '../../../core/providers/usage_provider.dart'; // todayLitersProvider, weekLitersProvider, monthSummaryNowProvider
-import '../../../core/providers/ingest_providers.dart'; // sessionAggregatorProvider
-import '../../../core/ingest/usage_event.dart';
+import '../../../core/providers/ingest_providers.dart'; // feedRawLineProvider
 
-// OPTIONAL: replace with your real BT service when ready.
-// The mock just needs: Stream<String> get lines;
-// Connection calls below are best-effort and tolerate missing methods.
-import '../../../core/services/mock_bluetooth_service.dart';
+// Real BLE service with picker
+import '../../../core/services/bluetooth_service.dart' as app;
+import '../../../core/services/ble_uart_service.dart';
 
 class HomeDashboard extends ConsumerStatefulWidget {
   const HomeDashboard({super.key});
@@ -25,20 +23,15 @@ class HomeDashboard extends ConsumerStatefulWidget {
 
 class _HomeDashboardState extends ConsumerState<HomeDashboard> {
   // ---- Bluetooth/Serial ingest state ----
-  final _ble = MockBluetoothService(); // swap to real service later
+  late final app.BluetoothService _ble = BleUartService();
   StreamSubscription<String>? _sub;
 
   bool _isConnected = false;
   String _status = 'Disconnected';
+
+  // For status strip only (UI hints)
   String _lastDetected = '-';
   double _lastSmartLit = 0;
-
-  // Current open session state (we transform Arduino lines → UsageEvent sequence)
-  int _sidCounter = 1;
-  int? _activeSid;
-  DateTime? _sessionStart;
-  String _pendingCls =
-      'hands'; // default class until we see "Detected: X" or JSON
 
   @override
   void dispose() {
@@ -52,28 +45,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
     setState(() => _status = 'Connecting…');
 
     try {
-      // Some mocks expose start(), others connect()/open(). Call best-effort via dynamic.
-      final d = _ble as dynamic;
-      bool tried = false;
-
-      try {
-        await d.start();
-        tried = true;
-      } catch (_) {}
-      if (!tried) {
-        try {
-          await d.connect();
-          tried = true;
-        } catch (_) {}
-      }
-      if (!tried) {
-        try {
-          await d.open();
-          tried = true;
-        } catch (_) {}
-      }
-      // It's fine if none exist; we can still listen to .lines if provided.
-
+      await _ble.connectWithPicker(context); // picker appears
       _sub = _ble.lines.listen(
         _onLine,
         onError: (e) => setState(() => _status = 'Error: $e'),
@@ -85,8 +57,8 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
       );
 
       setState(() {
-        _isConnected = true;
-        _status = 'Connected';
+        _isConnected = _ble.isConnected;
+        _status = _isConnected ? 'Connected' : 'Disconnected';
       });
     } catch (e) {
       setState(() => _status = 'Error: $e');
@@ -94,191 +66,56 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
   }
 
   Future<void> _disconnect() async {
-    try {
-      final d = _ble as dynamic;
-      bool tried = false;
-
-      try {
-        await d.stop();
-        tried = true;
-      } catch (_) {}
-      if (!tried) {
-        try {
-          await d.disconnect();
-          tried = true;
-        } catch (_) {}
-      }
-      if (!tried) {
-        try {
-          await d.close();
-          tried = true;
-        } catch (_) {}
-      }
-    } catch (_) {
-      // ignore
-    }
-
+    await _ble.disconnect();
     await _sub?.cancel();
     _sub = null;
-
     setState(() {
       _isConnected = false;
       _status = 'Disconnected';
     });
   }
 
-  // ---- Line handling (Arduino → UsageEvent) ----
+  // ---- Line handling (Arduino → central ingest) ----
   void _onLine(String raw) {
     final line = raw.trim();
     if (line.isEmpty) return;
 
-    // 1) Handle plain-text markers
-    if (_handlePlainMarker(line)) return;
+    // Always forward to the central ingest (this commits sessions/entries)
+    ref.read(feedRawLineProvider)(line);
 
-    // 2) Handle JSON objects like:
-    // {"object":"Dish","tapOpenTime":5,"smartWaterUsed":1.250,"normalWaterUsed":2.000,"waterSaved":0.750}
-    if (line.startsWith('{') && line.endsWith('}')) {
-      try {
-        final obj = jsonDecode(line) as Map<String, dynamic>;
-        _handleJsonMeasurement(obj);
-      } catch (_) {
-        // swallow malformed JSON; device noise shouldn't kill the stream
-      }
-    }
-  }
+    // Light-weight UI hints for the status strip
+    final l = line.toLowerCase();
 
-  bool _handlePlainMarker(String line) {
-    final l = line.toLowerCase().trim();
+    if (l == '[' || l == ']') return; // ignore array delimiters
 
-    // Ignore list delimiters from your sample payload
-    if (l == '[' || l == ']') return true;
-
-    // "Detected: Dish"
     if (l.startsWith('detected:')) {
-      final label = line.split(':').last.trim();
-      _lastDetected = label;
-      _pendingCls = _mapObjectToCls(label);
+      _lastDetected = line.split(':').last.trim();
       setState(() {});
-      return true;
+      return;
     }
 
-    // "Servo1 rotated -30° (Dish)"  → read the label inside parentheses
     if (l.startsWith('servo')) {
       final m = RegExp(r'\(([^)]+)\)\s*$').firstMatch(line);
       if (m != null) {
-        final label = m.group(1)!.trim();
-        _lastDetected = label;
-        _pendingCls = _mapObjectToCls(label);
+        _lastDetected = m.group(1)!.trim();
         setState(() {});
-        return true;
+      }
+      return;
+    }
+
+    // Read smartWaterUsed/object from JSON for display
+    if (line.startsWith('{') && line.endsWith('}')) {
+      try {
+        final j = jsonDecode(line) as Map<String, dynamic>;
+        final obj = (j['object'] as String?)?.trim();
+        final lit = (j['smartWaterUsed'] as num?)?.toDouble();
+        if (obj != null && obj.isNotEmpty) _lastDetected = obj;
+        if (lit != null) _lastSmartLit = lit;
+        setState(() {});
+      } catch (_) {
+        // ignore malformed JSON
       }
     }
-
-    // "Water tap opened"  → start session
-    if (l.contains('water tap opened')) {
-      _startSession();
-      return true;
-    }
-
-    // "Water tap closed"  → stop session
-    if (l.contains('water tap closed')) {
-      _stopSession();
-      return true;
-    }
-
-    return false;
-  }
-
-  void _handleJsonMeasurement(Map<String, dynamic> j) {
-    // Expected keys (some may be missing):
-    // object, tapOpenTime (secs), smartWaterUsed (L), normalWaterUsed (L), waterSaved (L)
-    final object = (j['object'] as String?)?.trim();
-    if (object != null && object.isNotEmpty) {
-      _lastDetected = object;
-      _pendingCls = _mapObjectToCls(object);
-    }
-
-    // If no session is active yet but numbers are coming, start one now.
-    if (_activeSid == null) {
-      _startSession();
-    }
-
-    // Use tapOpenTime (secs) if provided to create monotonic timestamps for aggregator deltas
-    final tSec = (j['tapOpenTime'] as num?)?.toDouble();
-    final now = DateTime.now();
-    final ts = (tSec != null && _sessionStart != null)
-        ? _sessionStart!.add(Duration(milliseconds: (tSec * 1000).round()))
-        : now;
-
-    final smartLit = (j['smartWaterUsed'] as num?)?.toDouble();
-    if (smartLit != null) {
-      _lastSmartLit = smartLit;
-      // Emit an update with cumulative liters (preferred by aggregator)
-      _emitEvent(
-        UsageEvent(
-          ts: ts,
-          ev: 'u',
-          sid: _activeSid!,
-          cls: _pendingCls, // 'plate' | 'fruit' | 'hands'
-          lit: smartLit,
-        ),
-      );
-    }
-  }
-
-  void _startSession() {
-    if (_activeSid != null) {
-      // Defensive: close any dangling session first
-      _stopSession();
-    }
-    _activeSid = _sidCounter++;
-    _sessionStart = DateTime.now();
-    _lastSmartLit = 0;
-    // Emit 'start'
-    _emitEvent(
-      UsageEvent(
-        ts: _sessionStart!,
-        ev: 'start',
-        sid: _activeSid!,
-        cls: _pendingCls, // best-known class at open time
-      ),
-    );
-  }
-
-  void _stopSession() {
-    if (_activeSid == null || _sessionStart == null) return;
-    final ts = DateTime.now();
-    // Emit 'stop' with the latest cumulative smart liters (if we have it)
-    _emitEvent(
-      UsageEvent(
-        ts: ts,
-        ev: 'stop',
-        sid: _activeSid!,
-        cls: _pendingCls,
-        lit: _lastSmartLit > 0 ? _lastSmartLit : null,
-      ),
-    );
-    _activeSid = null;
-    _sessionStart = null;
-    _lastSmartLit = 0;
-  }
-
-  void _emitEvent(UsageEvent e) {
-    // Send directly into the same aggregator your replay uses
-    ref.read(sessionAggregatorProvider).onEvent(e);
-  }
-
-  // Map Arduino object labels → our internal classifier codes
-  // inside _ArduinoIngest
-  String _mapObjectToCls(String label) {
-    final v = label.trim().toLowerCase();
-
-    // normalize common synonyms
-    if (v == 'dish' || v == 'dishes' || v == 'plate') return 'dish';
-    if (v == 'hand' || v == 'hands') return 'hand';
-
-    // otherwise keep the actual object name so “potato”, “bottle”, “cup”, etc. survive
-    return v;
   }
 
   @override

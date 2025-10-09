@@ -1,103 +1,76 @@
-// lib/core/services/mock_bluetooth_service.dart
 import 'dart:async';
-import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'bluetooth_service.dart';
 
-/// Mock Bluetooth/Serial service that emits newline-delimited lines.
-/// - Use `start()` / `stop()` (or connect/open / disconnect/close) from UI.
-/// - Still supports the old `playSample(...)` method for compatibility.
-class MockBluetoothService {
-  final _controller = StreamController<String>.broadcast();
-  Stream<String> get lines => _controller.stream;
+class MockBluetoothService implements BluetoothService {
+  final _ctrl = StreamController<String>.broadcast();
+  Stream<String> get lines => _ctrl.stream;
+  bool _connected = false;
+  @override
+  bool get isConnected => _connected;
 
-  Timer? _timer;
-  bool get _playing => _timer != null;
+  @override
+  Future<void> connectWithPicker(BuildContext context) async {
+    final sample = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => _MockPicker(),
+    );
+    if (sample == null) return;
 
-  // Default mixed sample (your Arduino-style output).
-  String _sample = r'''
-[ {"object":"Potato","tapOpenTime":3,"smartWaterUsed":0.900,"normalWaterUsed":1.500,"waterSaved":0.600}
-{"object":"Potato","tapOpenTime":4,"smartWaterUsed":1.050,"normalWaterUsed":1.750,"waterSaved":0.700}
-Detected: Dish
-Servo1 rotated -30° (Dish)
-{"object":"Dish","tapOpenTime":5,"smartWaterUsed":1.250,"normalWaterUsed":2.000,"waterSaved":0.750}
-Detected: Dish
-{"object":"Dish","tapOpenTime":6,"smartWaterUsed":1.450,"normalWaterUsed":2.250,"waterSaved":0.800}
-{"object":"Dish","tapOpenTime":7,"smartWaterUsed":1.650,"normalWaterUsed":2.500,"waterSaved":0.850}
-Water tap closed
-Detected: Dish
-Detected: Dish
-Detected: Dish
-Detected: Hand
-Detected: Potato
-Water tap opened
-{"object":"Dish","tapOpenTime":0,"smartWaterUsed":1.850,"normalWaterUsed":2.750,"waterSaved":0.900}
-Water tap closed]
-''';
+    _connected = true;
 
-  int _lineDelayMs = 220;
-  bool _loop = false;
-
-  /// New: Start emitting the current sample.
-  Future<void> start({
-    String? sample,
-    int lineDelayMs = 220,
-    bool loop = false,
-  }) async {
-    if (_playing) return;
-    if (sample != null) _sample = sample;
-    _lineDelayMs = lineDelayMs;
-    _loop = loop;
-
-    final lines = const LineSplitter()
-        .convert(_sample)
+    // Emit each line with small delay
+    final lines = sample
+        .split('\n')
         .map((s) => s.trim())
-        .toList();
-    int i = 0;
-
-    _timer = Timer.periodic(Duration(milliseconds: _lineDelayMs), (t) {
-      if (i >= lines.length) {
-        if (_loop) {
-          i = 0;
-        } else {
-          stop();
-          return;
-        }
-      }
-      final line = lines[i++];
-      if (line.isEmpty) return;
-      _controller.add(line);
-    });
+        .where((s) => s.isNotEmpty);
+    for (final l in lines) {
+      if (!_connected) break;
+      _ctrl.add(l);
+      await Future.delayed(const Duration(milliseconds: 180));
+    }
   }
 
-  /// New: Stop emitting.
-  Future<void> stop() async {
-    _timer?.cancel();
-    _timer = null;
+  @override
+  Future<void> disconnect() async {
+    _connected = false;
   }
+}
 
-  /// Old API kept for compatibility with your dev tools.
-  Future<void> playSample(
-    String sample, {
-    int lineDelayMs = 120,
-    bool loop = false,
-  }) async {
-    await stop();
-    await start(sample: sample, lineDelayMs: lineDelayMs, loop: loop);
-  }
+class _MockPicker extends StatelessWidget {
+  const _MockPicker();
 
-  /// Convenience aliases so UI can call any of these names.
-  Future<void> connect() => start();
-  Future<void> disconnect() => stop();
-  Future<void> open() => start();
-  Future<void> close() => stop();
-
-  /// Optional: feed one manual line (useful for quick tests).
-  void feed(String line) {
-    final s = line.trim();
-    if (s.isNotEmpty) _controller.add(s);
-  }
-
-  Future<void> dispose() async {
-    await stop();
-    await _controller.close();
+  @override
+  Widget build(BuildContext context) {
+    const demo = '''
+Water tap opened
+{"object":"Potato","tapOpenTime":0,"smartWaterUsed":0.10}
+{"object":"Potato","tapOpenTime":1,"smartWaterUsed":0.15}
+Detected: Dish
+{"object":"Dish","tapOpenTime":2,"smartWaterUsed":0.30}
+{"object":"Dish","tapOpenTime":3,"smartWaterUsed":0.45}
+Water tap closed
+''';
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Mock device', style: TextStyle(fontSize: 16)),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, demo),
+              child: const Text('Play demo stream'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
