@@ -1,4 +1,3 @@
-// lib/core/services/local_usage_repository.dart
 import 'package:sqflite/sqflite.dart';
 import '../services/db/app_database.dart';
 import '../../features/home/models/usage_models.dart';
@@ -13,15 +12,22 @@ class LocalUsageRepository implements repo.UsageRepository {
     await db.insert('usage_entries', {
       'activity': entry.activity,
       'start_millis': entry.start.millisecondsSinceEpoch,
-      'duration_min': entry.duration.inMinutes,
+      'duration_min': entry.duration.inMinutes, // legacy (kept)
+      'duration_secs': entry.duration.inSeconds, // authoritative
       'liters': entry.liters,
+
+      // NEW: raw device fields (nullable)
+      'object': entry.object,
+      'tap_open_sec': entry.tapOpenSec,
+      'smart_global': entry.smartGlobal,
+      'normal_global': entry.normalGlobal,
+      'saved_global': entry.savedGlobal,
     });
   }
 
-  // NEW: update an existing row (expects entry.id != null)
   @override
   Future<void> updateUsage(UsageEntry entry) async {
-    if (entry.id == null) return; // or throw ArgumentError
+    if (entry.id == null) return;
     final db = await _db;
     await db.update(
       'usage_entries',
@@ -29,7 +35,15 @@ class LocalUsageRepository implements repo.UsageRepository {
         'activity': entry.activity,
         'start_millis': entry.start.millisecondsSinceEpoch,
         'duration_min': entry.duration.inMinutes,
+        'duration_secs': entry.duration.inSeconds,
         'liters': entry.liters,
+
+        // NEW: raw device fields (nullable)
+        'object': entry.object,
+        'tap_open_sec': entry.tapOpenSec,
+        'smart_global': entry.smartGlobal,
+        'normal_global': entry.normalGlobal,
+        'saved_global': entry.savedGlobal,
       },
       where: 'id = ?',
       whereArgs: [entry.id],
@@ -44,13 +58,25 @@ class LocalUsageRepository implements repo.UsageRepository {
       orderBy: 'start_millis DESC',
       limit: 200,
     );
+
     return rows.map((r) {
+      final secs =
+          (r['duration_secs'] as int?) ??
+          (((r['duration_min'] as int?) ?? 0) * 60);
+
       return UsageEntry(
-        id: r['id'] as int?, // map DB id
+        id: r['id'] as int?,
         activity: r['activity'] as String,
         start: DateTime.fromMillisecondsSinceEpoch(r['start_millis'] as int),
-        duration: Duration(minutes: r['duration_min'] as int),
+        duration: Duration(seconds: secs), // seconds-accurate
         liters: (r['liters'] as num).toDouble(),
+
+        // NEW: raw device fields (nullable in DB)
+        object: r['object'] as String?,
+        tapOpenSec: (r['tap_open_sec'] as num?)?.toDouble(),
+        smartGlobal: (r['smart_global'] as num?)?.toDouble(),
+        normalGlobal: (r['normal_global'] as num?)?.toDouble(),
+        savedGlobal: (r['saved_global'] as num?)?.toDouble(),
       );
     }).toList();
   }
@@ -80,9 +106,7 @@ class LocalUsageRepository implements repo.UsageRepository {
       perDay[start.day - 1] += liters;
     }
 
-    // Placeholder heuristic until device baseline is defined
-    final saved = total * 0.20;
-
+    final saved = total * 0.20; // heuristic
     return MonthlySummary(
       year: when.year,
       month: when.month,
@@ -92,14 +116,12 @@ class LocalUsageRepository implements repo.UsageRepository {
     );
   }
 
-  // Delete one row by id
   @override
   Future<void> deleteUsage(int id) async {
     final db = await _db;
     await db.delete('usage_entries', where: 'id = ?', whereArgs: [id]);
   }
 
-  // Clear all usage rows (keep schema/profile)
   @override
   Future<void> clearAllUsage() async {
     final db = await _db;

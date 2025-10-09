@@ -1,18 +1,29 @@
 class UsageEntry {
-  /// Row id in the `usage_entries` table. Null for not-yet-persisted entries.
-  final int? id; // <— new
+  final int? id;
 
   final DateTime start;
   final Duration duration;
-  final String activity; // e.g., Washing Dishes
-  final double liters;
+  final String activity; // UI label (e.g., Washing Dishes)
+  final double liters; // liters for this sub-activity segment
+
+  // NEW: raw device fields captured at STOP time of this segment
+  final String? object; // e.g., "Dish", "Potato"
+  final double? tapOpenSec; // last tapOpenTime (seconds)
+  final double? smartGlobal; // device cumulative at STOP (L)
+  final double? normalGlobal; // optional, passthrough if provided (L)
+  final double? savedGlobal; // optional, passthrough if provided (L)
 
   UsageEntry({
-    this.id, // <— keep optional
+    this.id,
     required this.start,
     required this.duration,
     required this.activity,
     required this.liters,
+    this.object,
+    this.tapOpenSec,
+    this.smartGlobal,
+    this.normalGlobal,
+    this.savedGlobal,
   });
 
   UsageEntry copyWith({
@@ -21,6 +32,11 @@ class UsageEntry {
     Duration? duration,
     String? activity,
     double? liters,
+    String? object,
+    double? tapOpenSec,
+    double? smartGlobal,
+    double? normalGlobal,
+    double? savedGlobal,
   }) {
     return UsageEntry(
       id: id ?? this.id,
@@ -28,14 +44,19 @@ class UsageEntry {
       duration: duration ?? this.duration,
       activity: activity ?? this.activity,
       liters: liters ?? this.liters,
+      object: object ?? this.object,
+      tapOpenSec: tapOpenSec ?? this.tapOpenSec,
+      smartGlobal: smartGlobal ?? this.smartGlobal,
+      normalGlobal: normalGlobal ?? this.normalGlobal,
+      savedGlobal: savedGlobal ?? this.savedGlobal,
     );
   }
 }
 
 class MonthlySummary {
   final int year;
-  final int month; // 1..12
-  final List<double> litersPerDay; // length = days in month
+  final int month;
+  final List<double> litersPerDay;
   final double totalLiters;
   final double savedLiters;
 

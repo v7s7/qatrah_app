@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/theme/theme_v2.dart';
 import '../../../core/providers/usage_provider.dart';
 import '../../home/models/usage_models.dart';
@@ -14,13 +15,19 @@ class WashingDetailScreen extends ConsumerStatefulWidget {
 
 class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
   late TextEditingController _activityCtrl;
-  late TextEditingController _durationCtrl; // minutes
+  late TextEditingController _durationCtrl; // seconds
   late TextEditingController _litersCtrl;
 
   late DateTime _start;
-  int? _entryId; // null => create, non-null => update same row
+  int? _entryId;
+  bool _didInit = false;
 
-  bool _didInit = false; // guard
+  // Read-only snapshot from device (if provided)
+  String? _deviceObject;
+  double? _tapOpenSec;
+  double? _smartGlobal;
+  double? _normalGlobal;
+  double? _savedGlobal;
 
   @override
   void didChangeDependencies() {
@@ -31,25 +38,29 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
     final args = ModalRoute.of(context)?.settings.arguments;
 
     if (args is UsageEntry) {
-      // Editing an existing entry
       _entryId = args.id;
       _start = args.start;
       _activityCtrl = TextEditingController(text: args.activity);
       _durationCtrl = TextEditingController(
-        text: args.duration.inMinutes.toString(),
+        text: args.duration.inSeconds.toString(),
       );
-      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(0));
+      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(2));
+
+      // capture device snapshot (if present)
+      _deviceObject = args.object;
+      _tapOpenSec = args.tapOpenSec;
+      _smartGlobal = args.smartGlobal;
+      _normalGlobal = args.normalGlobal;
+      _savedGlobal = args.savedGlobal;
     } else if (args is UsageDraft) {
-      // Creating from a draft
       _entryId = null;
       _start = args.start;
       _activityCtrl = TextEditingController(text: args.activity);
       _durationCtrl = TextEditingController(
-        text: args.duration.inMinutes.toString(),
+        text: args.duration.inSeconds.toString(),
       );
-      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(0));
+      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(2));
     } else {
-      // Fallback new-entry template
       final d = UsageDraft.from(
         activity: 'Washing Dishes',
         duration: const Duration(minutes: 10),
@@ -59,9 +70,9 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       _start = d.start;
       _activityCtrl = TextEditingController(text: d.activity);
       _durationCtrl = TextEditingController(
-        text: d.duration.inMinutes.toString(),
+        text: d.duration.inSeconds.toString(),
       );
-      _litersCtrl = TextEditingController(text: d.liters.toStringAsFixed(0));
+      _litersCtrl = TextEditingController(text: d.liters.toStringAsFixed(2));
     }
   }
 
@@ -93,17 +104,26 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
               _field('Activity', _activityCtrl),
               const SizedBox(height: 14),
               _field(
-                'Duration (min)',
+                'Duration (sec)',
                 _durationCtrl,
-                keyboard: TextInputType.number,
+                keyboard: const TextInputType.numberWithOptions(decimal: false),
               ),
               const SizedBox(height: 14),
               _field(
                 'Water quantity (L)',
                 _litersCtrl,
-                keyboard: TextInputType.number,
+                keyboard: const TextInputType.numberWithOptions(decimal: true),
               ),
               const SizedBox(height: 24),
+              if (_hasDeviceSnapshot)
+                _DevStatsPanel(
+                  object: _deviceObject,
+                  tapOpenSec: _tapOpenSec,
+                  smart: _smartGlobal,
+                  normal: _normalGlobal,
+                  saved: _savedGlobal,
+                ),
+              if (_hasDeviceSnapshot) const SizedBox(height: 24),
               SizedBox(
                 width: 200,
                 child: ElevatedButton(
@@ -113,13 +133,12 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   onPressed: () async {
-                    final minutes =
-                        int.tryParse(_durationCtrl.text.trim()) ?? 0;
+                    final secs = int.tryParse(_durationCtrl.text.trim()) ?? 0;
                     final liters =
                         double.tryParse(_litersCtrl.text.trim()) ?? 0;
                     final activity = _activityCtrl.text.trim();
 
-                    if (activity.isEmpty || minutes <= 0 || liters <= 0) {
+                    if (activity.isEmpty || secs <= 0 || liters <= 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Please enter valid values'),
@@ -129,11 +148,18 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                     }
 
                     final entry = UsageEntry(
-                      id: _entryId, // keep id if present (update)
+                      id: _entryId,
                       activity: activity,
                       start: _start,
-                      duration: Duration(minutes: minutes),
+                      duration: Duration(seconds: secs),
                       liters: liters,
+
+                      // pass-through device snapshot (kept read-only here)
+                      object: _deviceObject,
+                      tapOpenSec: _tapOpenSec,
+                      smartGlobal: _smartGlobal,
+                      normalGlobal: _normalGlobal,
+                      savedGlobal: _savedGlobal,
                     );
 
                     if (isUpdate) {
@@ -162,6 +188,13 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       ),
     );
   }
+
+  bool get _hasDeviceSnapshot =>
+      _deviceObject != null ||
+      _tapOpenSec != null ||
+      _smartGlobal != null ||
+      _normalGlobal != null ||
+      _savedGlobal != null;
 
   Widget _infoRow(String label, String value) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -231,5 +264,63 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       'Dec',
     ];
     return '${two(dt.hour)}:${two(dt.minute)}, ${dt.day} ${months[dt.month - 1]}';
+  }
+}
+
+class _DevStatsPanel extends StatelessWidget {
+  final String? object;
+  final double? tapOpenSec;
+  final double? smart;
+  final double? normal;
+  final double? saved;
+
+  const _DevStatsPanel({
+    required this.object,
+    required this.tapOpenSec,
+    required this.smart,
+    required this.normal,
+    required this.saved,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Text label(String s) => Text(
+      s,
+      style: const TextStyle(
+        color: Colors.black87,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    Text value(String s) =>
+        Text(s, style: const TextStyle(color: Colors.black));
+    Widget row(String l, String v) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [label(l), const Spacer(), value(v)]),
+    );
+    String? fmt3(double? v) => v == null ? null : v.toStringAsFixed(3);
+    String? fmtS(double? v) => v == null
+        ? null
+        : (v == v.truncateToDouble()
+              ? v.toStringAsFixed(0)
+              : v.toStringAsFixed(3));
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: AppGradient.primary,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          row('Object', object ?? '—'),
+          row('tapOpenTime (sec)', fmtS(tapOpenSec) ?? '—'),
+          row('smartWaterUsed (L)', fmt3(smart) ?? '—'),
+          row('normalWaterUsed (L)', fmt3(normal) ?? '—'),
+          row('waterSaved (L)', fmt3(saved) ?? '—'),
+        ],
+      ),
+    );
   }
 }
