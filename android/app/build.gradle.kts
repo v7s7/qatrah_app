@@ -1,3 +1,5 @@
+// android/app/build.gradle.kts  (FIXED)
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -8,23 +10,22 @@ plugins {
 android {
     namespace = "com.example.qatrah_app"
 
-    // Use explicit SDK levels (good for BLE + modern Play requirements)
-    compileSdk = 34
+    // Explicit SDK levels
+    compileSdk = 35
 
     defaultConfig {
         // TODO: change to your real package id before release
         applicationId = "com.example.qatrah_app"
 
-        // BLE requires >= 21
         minSdk = 21
         targetSdk = 34
 
-        // Keep versioning delegated to Flutter
+        // Delegate versioning to Flutter
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
-    // AGP 8.x prefers Java 17
+    // AGP 8.x → Java 17
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -35,15 +36,22 @@ android {
 
     buildTypes {
         release {
-            // Use your real signing config for Play builds
+            // For local installs, sign with debug keystore (replace with your release keystore for production)
             signingConfig = signingConfigs.getByName("debug")
+
+            // Unblock the build: keep both shrinking features OFF
+            // (Turn both ON together later if you want smaller APKs)
             isMinifyEnabled = false
+            isShrinkResources = false
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-        debug { }
+        debug {
+            // defaults are fine
+        }
     }
 }
 

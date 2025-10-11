@@ -8,22 +8,31 @@ environment:
   sdk: ^3.8.1
 
 dependencies:
-  sqflite_common_ffi: ^2.3.3
   flutter:
     sdk: flutter
-  flutter_blue_plus: ^1.31.17
-  # UI & Navigation
-  cupertino_icons: ^1.0.8
-  go_router: ^14.2.7
-  flutter_riverpod: ^2.5.1
+
+  # BLE & permissions
+  flutter_blue_plus: ^1.36.8
+  permission_handler: ^11.3.1
+  device_info_plus: ^11.1.0
+
+  # State & Navigation
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.8.1
+
+  # Data & storage
+  sqflite: ^2.3.3+1
+  sqflite_common_ffi: ^2.3.3
+  path_provider: ^2.1.5
 
   # Utilities
   intl: ^0.19.0
   cached_network_image: ^3.3.1
 
-  # UI Enhancements
+  # UI
   flutter_svg: ^2.0.9
-  fl_chart: ^0.69.0
+  fl_chart: ^0.69.2
+  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
@@ -33,12 +42,11 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Assets (prepare folders)
   assets:
     - assets/images/
     - assets/icons/
     - assets/images/logo.png
-  # Fonts (add your font files later if needed)
+
   # fonts:
   #   - family: Inter
   #     fonts:

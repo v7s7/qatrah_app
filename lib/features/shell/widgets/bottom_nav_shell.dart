@@ -11,12 +11,23 @@ class BottomNavShell extends StatefulWidget {
 
 class _BottomNavShellState extends State<BottomNavShell> {
   int index = 0;
+  late final List<Widget> _keptAlivePages;
+
+  @override
+  void initState() {
+    super.initState();
+    // Wrap each page so it is NOT disposed when switching tabs.
+    _keptAlivePages = widget.pages
+        .map((p) => _KeepAlive(child: p))
+        .toList(growable: false);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppThemeV2.bgNavy,
-      body: widget.pages[index],
+      // Using IndexedStack keeps offstage tabs alive (no dispose on switch).
+      body: IndexedStack(index: index, children: _keptAlivePages),
       bottomNavigationBar: NavigationBar(
         backgroundColor: Colors.black.withOpacity(0.15),
         indicatorColor: Colors.white.withOpacity(0.08),
@@ -47,5 +58,25 @@ class _BottomNavShellState extends State<BottomNavShell> {
         ],
       ),
     );
+  }
+}
+
+class _KeepAlive extends StatefulWidget {
+  final Widget child;
+  const _KeepAlive({required this.child});
+
+  @override
+  State<_KeepAlive> createState() => _KeepAliveState();
+}
+
+class _KeepAliveState extends State<_KeepAlive>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

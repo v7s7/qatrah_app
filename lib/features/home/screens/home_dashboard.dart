@@ -10,7 +10,7 @@ import '../../../core/theme/theme_v2.dart';
 import '../../../core/providers/usage_provider.dart'; // todayLitersProvider, weekLitersProvider, monthSummaryNowProvider
 import '../../../core/providers/ingest_providers.dart'; // feedRawLineProvider
 
-// Real BLE service with picker
+// Real BLE service with picker (singleton)
 import '../../../core/services/bluetooth_service.dart' as app;
 import '../../../core/services/ble_uart_service.dart';
 
@@ -21,9 +21,10 @@ class HomeDashboard extends ConsumerStatefulWidget {
   ConsumerState<HomeDashboard> createState() => _HomeDashboardState();
 }
 
-class _HomeDashboardState extends ConsumerState<HomeDashboard> {
+class _HomeDashboardState extends ConsumerState<HomeDashboard>
+    with AutomaticKeepAliveClientMixin {
   // ---- Bluetooth/Serial ingest state ----
-  late final app.BluetoothService _ble = BleUartService();
+  late final app.BluetoothService _ble = BleUartService(); // singleton
   StreamSubscription<String>? _sub;
 
   bool _isConnected = false;
@@ -33,47 +34,95 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
   String _lastDetected = '-';
   double _lastSmartLit = 0;
 
+  // Throttle UI rebuilds triggered by incoming BLE lines
+  Timer? _uiTick;
+  bool _uiDirty = false;
+  void _scheduleUiRefresh([int ms = 120]) {
+    _uiDirty = true;
+    if (_uiTick != null) return;
+    _uiTick = Timer(Duration(milliseconds: ms), () {
+      _uiTick = null;
+      if (!mounted) return;
+      if (_uiDirty) {
+        _uiDirty = false;
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Reflect current service state (survives page changes).
+    _isConnected = _ble.isConnected;
+    _status = _isConnected ? 'Connected' : 'Disconnected';
+    _attachBle();
+  }
+
+  void _attachBle() {
+    // (Re)attach listener to the shared BLE lines stream.
+    _sub?.cancel();
+    _sub = _ble.lines.listen(
+      _onLine,
+      onError: (e) {
+        _status = 'Error';
+        _isConnected = _ble.isConnected; // reflect actual state
+        _scheduleUiRefresh();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          );
+        }
+      },
+      onDone: () {
+        // The stream should not normally close; if it does, reflect state.
+        _isConnected = _ble.isConnected;
+        _status = _isConnected ? 'Connected' : 'Disconnected';
+        _scheduleUiRefresh();
+      },
+      cancelOnError: false,
+    );
+  }
+
   @override
   void dispose() {
-    _sub?.cancel();
+    _uiTick?.cancel();
+    _sub?.cancel(); // only cancel local listener; DO NOT disconnect BLE
     super.dispose();
   }
 
   // ---- Connection control ----
   Future<void> _connect() async {
-    if (_isConnected) return;
+    if (_ble.isConnected) {
+      // Already connected; nothing to do.
+      _isConnected = true;
+      _status = 'Connected';
+      _scheduleUiRefresh();
+      return;
+    }
     setState(() => _status = 'Connecting…');
 
     try {
-      await _ble.connectWithPicker(context); // picker appears
-      _sub = _ble.lines.listen(
-        _onLine,
-        onError: (e) => setState(() => _status = 'Error: $e'),
-        onDone: () => setState(() {
-          _isConnected = false;
-          _status = 'Disconnected';
-        }),
-        cancelOnError: false,
-      );
-
-      setState(() {
-        _isConnected = _ble.isConnected;
-        _status = _isConnected ? 'Connected' : 'Disconnected';
-      });
-    } catch (e) {
-      setState(() => _status = 'Error: $e');
+      await _ble.connectWithPicker(context); // picker appears once
+      // Listener is already attached; just refresh flags.
+      _isConnected = _ble.isConnected;
+      _status = _isConnected ? 'Connected' : 'Disconnected';
+      _scheduleUiRefresh();
+    } catch (e, st) {
+      debugPrint('BLE connect error: $e\n$st');
+      _status = 'Error';
+      _isConnected = _ble.isConnected;
+      _scheduleUiRefresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
-  Future<void> _disconnect() async {
-    await _ble.disconnect();
-    await _sub?.cancel();
-    _sub = null;
-    setState(() {
-      _isConnected = false;
-      _status = 'Disconnected';
-    });
-  }
+  // NOTE: Per product requirement "never disconnect unless app closes or ESP off",
+  // we do NOT expose a disconnect action. BleUartService.disconnect() is a no-op.
 
   // ---- Line handling (Arduino → central ingest) ----
   void _onLine(String raw) {
@@ -83,6 +132,18 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
     // Always forward to the central ingest (this commits sessions/entries)
     ref.read(feedRawLineProvider)(line);
 
+    // Update connection hint based on service & log tags
+    if (line.contains('INFO: BLE connected') ||
+        line.contains('INFO: BLE session ready')) {
+      _isConnected = true;
+      _status = 'Connected';
+      _scheduleUiRefresh();
+    } else if (line.contains('WARN: BLE disconnected')) {
+      _isConnected = false;
+      _status = 'Disconnected';
+      _scheduleUiRefresh();
+    }
+
     // Light-weight UI hints for the status strip
     final l = line.toLowerCase();
 
@@ -90,7 +151,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
 
     if (l.startsWith('detected:')) {
       _lastDetected = line.split(':').last.trim();
-      setState(() {});
+      _scheduleUiRefresh();
       return;
     }
 
@@ -98,7 +159,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
       final m = RegExp(r'\(([^)]+)\)\s*$').firstMatch(line);
       if (m != null) {
         _lastDetected = m.group(1)!.trim();
-        setState(() {});
+        _scheduleUiRefresh();
       }
       return;
     }
@@ -111,7 +172,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
         final lit = (j['smartWaterUsed'] as num?)?.toDouble();
         if (obj != null && obj.isNotEmpty) _lastDetected = obj;
         if (lit != null) _lastSmartLit = lit;
-        setState(() {});
+        _scheduleUiRefresh();
       } catch (_) {
         // ignore malformed JSON
       }
@@ -120,6 +181,8 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     final double today = ref.watch(todayLitersProvider);
     final double week = ref.watch(weekLitersProvider);
     final monthSummary = ref.watch(monthSummaryNowProvider);
@@ -137,10 +200,10 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
         title: const Text('Dashboard'),
         backgroundColor: Colors.black.withOpacity(0.15),
         actions: [
-          // BLE connect/disconnect
+          // BLE connect only (no disconnect to keep persistent link)
           IconButton(
-            tooltip: _isConnected ? 'Disconnect device' : 'Connect to device',
-            onPressed: _isConnected ? _disconnect : _connect,
+            tooltip: _isConnected ? 'Connected' : 'Connect to device',
+            onPressed: _isConnected ? null : _connect,
             icon: Icon(
               _isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
             ),
@@ -256,6 +319,9 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard> {
       ),
     );
   }
+
+  @override
+  bool get wantKeepAlive => true;
 }
 
 // Small status banner for connection + latest detection
@@ -291,28 +357,60 @@ class _StatusStrip extends StatelessWidget {
             color: Colors.white70,
           ),
           const SizedBox(width: 8),
-          Text(
-            status,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
+
+          // Make the textual area flexible to avoid overflow on small widths
+          Expanded(
+            child: Row(
+              children: [
+                // Status (ellipsized if too long)
+                Expanded(
+                  child: Text(
+                    status,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Connection dot stays visible
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Detected label (ellipsized)
+                Flexible(
+                  child: Text(
+                    'Detected: $lastDetected',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                // Liters is short; keep as-is
+                Text(
+                  'Liters: ${lastLiters.toStringAsFixed(2)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
             ),
-          ),
-          const Spacer(),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Detected: $lastDetected',
-            style: const TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Liters: ${lastLiters.toStringAsFixed(2)}',
-            style: const TextStyle(color: Colors.white70),
           ),
         ],
       ),
