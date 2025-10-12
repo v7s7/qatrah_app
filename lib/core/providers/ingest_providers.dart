@@ -36,6 +36,7 @@ class _ArduinoIngest {
   DateTime? _subStartTs;
   String _currentCls = 'hands';
   double _baselineLit = 0.0; // device cumulative at sub-activity start
+  double _baselineNormalLit = 0.0;
 
   _ArduinoIngest(this.ref);
 
@@ -201,6 +202,7 @@ class _ArduinoIngest {
   ) {
     _currentCls = cls;
     _baselineLit = baselineCumulativeLit;
+    _baselineNormalLit = _lastNormalLit;
     _activeSid = _sidCounter++;
     _subStartTs = ts;
 
@@ -221,6 +223,9 @@ class _ArduinoIngest {
     final endTs = ts ?? DateTime.now();
     final used = _lastSmartLit - _baselineLit;
     final safeUsed = used.isFinite && used > 0 ? used : 0.0;
+ final normalSeg = _lastNormalLit - _baselineNormalLit;
+final safeNormal = normalSeg.isFinite && normalSeg > 0 ? normalSeg : 0.0;
+final safeSaved  = safeNormal - safeUsed;
 
     _emit(
       UsageEvent(
@@ -230,17 +235,18 @@ class _ArduinoIngest {
         cls: _currentCls,
         lit: safeUsed,
         // Attach raw device snapshot so UI can display it
-        smart: _lastSmartLit,
-        normal: _lastNormalLit,
-        saved: _lastSavedLit,
+ smart: safeUsed,          // per-segment smart
+ normal: safeNormal,       // per-segment normal
+ saved: safeSaved,         // per-segment saved
         tapSec: _lastTapOpenSec,
       ),
     );
 
     _activeSid = null;
     _subStartTs = null;
-    _baselineLit = _lastSmartLit; // carry forward
-  }
+ _baselineLit = _lastSmartLit;      // keep smart baseline in sync
+ _baselineNormalLit = _lastNormalLit; // NEW: keep normal baseline in sync  
+}
 
   void _emit(UsageEvent e) {
     ref.read(sessionAggregatorProvider).onEvent(e);

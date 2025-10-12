@@ -5,72 +5,79 @@ import '../../features/achievements/models/achievement.dart';
 import '../../features/home/models/usage_models.dart';
 
 final achievementsProvider = Provider.autoDispose<List<Achievement>>((ref) {
-  // Establish *reactive* dependencies on the AsyncValues
+  // Reactive input
   final recentAsync = ref.watch(recentUsageProvider);
   final now = DateTime.now();
-  final summaryAsync = ref.watch(
-    monthlySummaryProvider(DateTime(now.year, now.month, 1)),
-  );
 
-  // If either is still loading or errored, return a stable fallback
+  // Safe fallback
   final recent = recentAsync.maybeWhen(
     data: (v) => v,
     orElse: () => const <UsageEntry>[],
   );
-  final summary = summaryAsync.maybeWhen(
-    data: (s) => s,
-    orElse: () => MonthlySummary(
-      year: now.year,
-      month: now.month,
-      litersPerDay: const <double>[],
-      totalLiters: 0,
-      savedLiters: 0,
-    ),
-  );
 
-  // Distinct days with any usage
+  // Distinct active days
   final daysWithAny = {
     for (final e in recent)
       DateTime(e.start.year, e.start.month, e.start.day).millisecondsSinceEpoch,
   }.length;
 
-  // Monthly totals
-  final savedLiters = summary.savedLiters;
-  final totalThisMonth = summary.totalLiters;
+  // Baseline faucet rate (L/s)
+  const double kNormalRateLps = 0.25;
 
-  // Thresholds
-  const kSaver100GalLiters = 378.5; // ~100 gal
-  const kEco1000GalLiters = 3785.0; // ~1000 gal
-  const kConsistentDays = 7.0;
-  const kActiveTrackerLiters = 200.0;
+  // Lifetime saved (from all loaded entries)
+  double lifetimeSavedL = 0.0;
+  for (final e in recent) {
+    final normal = kNormalRateLps * e.duration.inSeconds;
+    final saved = normal - e.liters; // e.liters = smart used for that entry
+    if (saved.isFinite && saved > 0) lifetimeSavedL += saved;
+  }
+
+  // This month saved
+  final startOfMonth = DateTime(now.year, now.month, 1);
+  double monthSavedL = 0.0;
+  for (final e in recent.where((e) => !e.start.isBefore(startOfMonth))) {
+    final normal = kNormalRateLps * e.duration.inSeconds;
+    final saved = normal - e.liters;
+    if (saved.isFinite && saved > 0) monthSavedL += saved;
+  }
+
+  // Money model (same as Home)
+  const double kAedPerLiter = 0.43;
+  final lifetimeMoneyAed = lifetimeSavedL * kAedPerLiter;
+
+  // Targets
+  const double kLifetimeTarget = 1000.0;      // liters
+  const double kMonthlyTarget = 200.0;        // liters
+  const double kConsistentDaysTarget = 7.0;   // days
+  const double kLifetimeMoneyTarget = 500.0;  // AED
 
   return [
     Achievement(
-      id: 'water_saver',
-      title: 'Water Saver',
-      description: 'Saved 100 gallons',
-      progress: savedLiters / kSaver100GalLiters,
+      id: 'total_saved_all_time',
+      title: 'All-time Saver',
+      description: '${lifetimeSavedL.toStringAsFixed(1)} L saved in total',
+      progress: (lifetimeSavedL / kLifetimeTarget).clamp(0.0, 1.0),
       icon: 'water_drop',
     ),
     Achievement(
+      id: 'monthly_saver',
+      title: 'Monthly Saver',
+      description: '${monthSavedL.toStringAsFixed(1)} L saved this month',
+      progress: (monthSavedL / kMonthlyTarget).clamp(0.0, 1.0),
+      icon: 'verified',
+    ),
+    Achievement(
       id: 'consistent_saver',
-      title: 'Consistent Saver',
-      description: '7 days in a row',
-      progress: daysWithAny / kConsistentDays,
+      title: 'Consistency',
+      description: 'Active on $daysWithAny day(s)',
+      progress: (daysWithAny / kConsistentDaysTarget).clamp(0.0, 1.0),
       icon: 'calendar_today',
     ),
     Achievement(
-      id: 'eco_warrior',
-      title: 'Eco Warrior',
-      description: 'Saved 1,000 gallons',
-      progress: savedLiters / kEco1000GalLiters,
-      icon: 'eco',
-    ),
-    Achievement(
-      id: 'active_tracker',
-      title: 'Active Tracker',
-      description: '200+ liters this month',
-      progress: totalThisMonth / kActiveTrackerLiters,
+      id: 'total_money_saved',
+      title: 'Money Saved',
+      description: '${lifetimeMoneyAed.toStringAsFixed(2)} AED saved in total',
+      progress: (lifetimeMoneyAed / kLifetimeMoneyTarget).clamp(0.0, 1.0),
       icon: 'emoji_events',
     ),
   ];

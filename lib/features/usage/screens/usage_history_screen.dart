@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/theme_v2.dart';
 import '../../../core/providers/usage_provider.dart';
 import '../../home/models/usage_models.dart';
+import '../models/usage_draft.dart';
 
 class UsageHistoryScreen extends ConsumerStatefulWidget {
   const UsageHistoryScreen({super.key});
@@ -20,51 +19,14 @@ class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
   int _selected = 0;
   final Set<int> _removedIds = {}; // hide dismissed rows immediately
 
-  // ---------- SEEDING HELPERS ----------
-  Future<void> _addRandom() async {
-    final now = DateTime.now();
-    final rnd = Random();
-    final activities = ['Washing Dishes', 'Washing Fruits', 'Washing Hands'];
-    final minutes = [5, 10, 15, 20, 30, 45][rnd.nextInt(6)];
-    final liters = [5, 8, 10, 12, 15, 18, 20, 25][rnd.nextInt(8)].toDouble();
-
-    final entry = UsageEntry(
-      activity: activities[rnd.nextInt(activities.length)],
-      start: now.subtract(Duration(minutes: rnd.nextInt(60))),
-      duration: Duration(minutes: minutes),
-      liters: liters,
-    );
-    await ref.read(addUsageEntryProvider(entry).future);
-  }
-
-  Future<void> _seedWeek() async {
-    final now = DateTime.now();
-    final rnd = Random();
-    for (int d = 0; d < 7; d++) {
-      final day = DateTime(
-        now.year,
-        now.month,
-        now.day,
-      ).subtract(Duration(days: d));
-      final count = 1 + rnd.nextInt(3); // 1–3 entries per day
-      for (int i = 0; i < count; i++) {
-        final entry = UsageEntry(
-          activity: [
-            'Washing Dishes',
-            'Washing Fruits',
-            'Washing Hands',
-          ][rnd.nextInt(3)],
-          start: day.add(
-            Duration(hours: 9 + rnd.nextInt(10), minutes: rnd.nextInt(60)),
-          ),
-          duration: Duration(minutes: [5, 10, 15, 20, 30][rnd.nextInt(5)]),
-          liters: [5, 8, 10, 12, 15, 18, 20, 25][rnd.nextInt(8)].toDouble(),
-        );
-        await ref.read(addUsageEntryProvider(entry).future);
-      }
-    }
-  }
   // ------------------------------------
+  Future<void> _openAddForm() async {
+    await Navigator.pushNamed(
+      context,
+      '/usage/detail',
+      arguments: UsageDraft.from(activity: 'Washing Dishes'),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -114,24 +76,15 @@ class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
         ],
       ),
 
-      // FABs to seed data quickly
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'seed-week',
-            tooltip: 'Seed week',
-            onPressed: _seedWeek,
-            child: const Icon(Icons.auto_awesome),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton(
-            heroTag: 'add-one',
-            tooltip: 'Add one entry',
-            onPressed: _addRandom,
-            child: const Icon(Icons.add),
-          ),
-        ],
+      // Small offset so the FAB never overlaps content edges
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(right: 8, bottom: 12),
+        child: FloatingActionButton(
+          heroTag: 'add-one',
+          tooltip: 'Add entry',
+          onPressed: _openAddForm,
+          child: const Icon(Icons.add),
+        ),
       ),
 
       body: SafeArea(
@@ -426,19 +379,40 @@ class _TotalsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!visible) return const SizedBox.shrink();
 
-    Text t(String s) => Text(s, style: const TextStyle(color: Colors.white));
+    Widget stat(String title, String value) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        );
+
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0x14FFFFFF),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          t("Today's Total\n$today"),
-          t("This Week's Total\n$week"),
-          t("This Month's Total\n$month"),
+          Expanded(child: stat("Today's Total", today)),
+          const SizedBox(width: 8),
+          Expanded(child: stat("This Week's Total", week)),
+          const SizedBox(width: 8),
+          Expanded(child: stat("This Month's Total", month)),
         ],
       ),
     );
@@ -451,12 +425,12 @@ class _TotalsSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget box() => Container(
-      height: 58,
-      decoration: BoxDecoration(
-        color: const Color(0x14FFFFFF),
-        borderRadius: BorderRadius.circular(14),
-      ),
-    );
+          height: 58,
+          decoration: BoxDecoration(
+            color: const Color(0x14FFFFFF),
+            borderRadius: BorderRadius.circular(14),
+          ),
+        );
     return Row(
       children: [
         Expanded(child: box()),
