@@ -81,14 +81,11 @@ final weekLitersProvider = Provider.autoDispose<double>((ref) {
       .watch(recentUsageProvider)
       .maybeWhen(data: (v) => v, orElse: () => const <UsageEntry>[]);
   final now = DateTime.now();
-  final startOfWeek = DateTime(
-    now.year,
-    now.month,
-    now.day,
-  ).subtract(Duration(days: now.weekday - 1));
-  return recent
-      .where((e) => !e.start.isBefore(startOfWeek))
-      .fold<double>(0.0, (sum, e) => sum + e.liters);
+ final start = DateTime(now.year, now.month, now.day)
+     .subtract(const Duration(days: 6));
+ return recent
+     .where((e) => !e.start.isBefore(start))
+     .fold<double>(0.0, (sum, e) => sum + e.liters);
 });
 
 /// Convenience: current month's summary as an AsyncValue for quick access on Home

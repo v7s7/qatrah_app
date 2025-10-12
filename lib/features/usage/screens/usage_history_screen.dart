@@ -16,7 +16,7 @@ class UsageHistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
-  // 0: Today, 1: This Week, 2: This Month, 3: Custom (same as Month for now)
+  // 0: Today, 1: This Week, 2: This Month
   int _selected = 0;
   final Set<int> _removedIds = {}; // hide dismissed rows immediately
 
@@ -164,11 +164,6 @@ class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
                     'This Month',
                     selected: _selected == 2,
                     onTap: () => setState(() => _selected = 2),
-                  ),
-                  _FilterChip(
-                    'Custom',
-                    selected: _selected == 3,
-                    onTap: () => setState(() => _selected = 3),
                   ),
                 ],
               ),
@@ -357,7 +352,6 @@ class _UsageHistoryScreenState extends ConsumerState<UsageHistoryScreen> {
         ).subtract(Duration(days: weekday - 1));
         break;
       case 2: // This month
-      case 3: // Custom (same for now)
       default:
         startRange = DateTime(now.year, now.month, 1);
         break;

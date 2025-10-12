@@ -25,8 +25,6 @@ import 'features/profile/screens/change_password_screen.dart';
 // Usage detail
 import 'features/usage/screens/washing_detail_screen.dart';
 
-// Dev: Serial log replay
-import 'features/dev/screens/log_replay_screen.dart'; // <-- added
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,8 +83,6 @@ class QatrahApp extends StatelessWidget {
         // Detail screens
         '/usage/detail': (context) => const WashingDetailScreen(),
 
-        // Dev: Serial log replay screen
-        '/dev/replay': (context) => const LogReplayScreen(), // <-- added
       },
     );
   }

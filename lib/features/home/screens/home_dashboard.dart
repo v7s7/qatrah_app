@@ -1,11 +1,8 @@
 // lib/features/home/screens/home_dashboard.dart
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../../core/theme/theme_v2.dart';
 import '../../../core/providers/usage_provider.dart'; // todayLitersProvider, weekLitersProvider, monthSummaryNowProvider
 import '../../../core/providers/ingest_providers.dart'; // feedRawLineProvider
@@ -24,7 +21,7 @@ class HomeDashboard extends ConsumerStatefulWidget {
 class _HomeDashboardState extends ConsumerState<HomeDashboard>
     with AutomaticKeepAliveClientMixin {
   // ---- Bluetooth/Serial ingest state ----
-  late final app.BluetoothService _ble = BleUartService(); // singleton
+  late final app.BluetoothService _ble = BleUartService(); // singletonFYou
   StreamSubscription<String>? _sub;
 
   bool _isConnected = false;
@@ -32,8 +29,6 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard>
 
   // For status strip only (UI hints)
   String _lastDetected = '-';
-  double _lastSmartLit = 0;
-
   // Throttle UI rebuilds triggered by incoming BLE lines
   Timer? _uiTick;
   bool _uiDirty = false;
@@ -165,18 +160,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard>
     }
 
     // Read smartWaterUsed/object from JSON for display
-    if (line.startsWith('{') && line.endsWith('}')) {
-      try {
-        final j = jsonDecode(line) as Map<String, dynamic>;
-        final obj = (j['object'] as String?)?.trim();
-        final lit = (j['smartWaterUsed'] as num?)?.toDouble();
-        if (obj != null && obj.isNotEmpty) _lastDetected = obj;
-        if (lit != null) _lastSmartLit = lit;
-        _scheduleUiRefresh();
-      } catch (_) {
-        // ignore malformed JSON
-      }
-    }
+
   }
 
   @override
@@ -192,7 +176,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard>
       data: (s) => s.savedLiters,
       orElse: () => 0.0,
     );
-    final savedAed = (savedLiters * 0.43).toStringAsFixed(2);
+    final savedAed = (savedLiters * 0.23).toStringAsFixed(2);
 
     return Scaffold(
       backgroundColor: AppThemeV2.bgNavy,
@@ -208,12 +192,6 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard>
               _isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
             ),
           ),
-          if (kDebugMode)
-            IconButton(
-              icon: const Icon(Icons.developer_mode),
-              tooltip: 'Replay Serial Log',
-              onPressed: () => Navigator.pushNamed(context, '/dev/replay'),
-            ),
           IconButton(
             icon: const Icon(Icons.bar_chart_rounded),
             onPressed: () => Navigator.pushNamed(context, '/report'),
@@ -232,7 +210,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard>
                 connected: _isConnected,
                 status: _status,
                 lastDetected: _lastDetected,
-                lastLiters: _lastSmartLit,
+                todayLiters: today,
               ),
               const SizedBox(height: 16),
 
@@ -280,11 +258,7 @@ class _HomeDashboardState extends ConsumerState<HomeDashboard>
                 ),
               ),
 
-              const SizedBox(height: 24),
-              Text(
-                'You saved ${savedLiters.toStringAsFixed(1)} L vs. normal faucet (this month)',
-                style: const TextStyle(color: Colors.white70),
-              ),
+
               const SizedBox(height: 24),
 
               Row(
@@ -329,13 +303,13 @@ class _StatusStrip extends StatelessWidget {
   final bool connected;
   final String status;
   final String lastDetected;
-  final double lastLiters;
+  final double todayLiters;
 
   const _StatusStrip({
     required this.connected,
     required this.status,
     required this.lastDetected,
-    required this.lastLiters,
+   required this.todayLiters,
   });
 
   @override
@@ -403,7 +377,7 @@ class _StatusStrip extends StatelessWidget {
 
                 // Liters is short; keep as-is
                 Text(
-                  'Liters: ${lastLiters.toStringAsFixed(2)}',
+                  'Today: ${todayLiters.toStringAsFixed(2)} L',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   softWrap: false,
