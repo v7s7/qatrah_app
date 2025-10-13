@@ -16,22 +16,22 @@ class WashingDetailScreen extends ConsumerStatefulWidget {
 // Canonical activities + object labels + ESP32 rates
 class _ActivityOption {
   final String activity; // UI label
-  final String object;   // device object label
-  final double rate;     // L/s
+  final String object; // device object label
+  final double rate; // L/s
   const _ActivityOption(this.activity, this.object, this.rate);
 }
 
 class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
   // --- Rates (L/s) — must match ESP32 ---
-  static const double _rateHand   = 0.10;
-  static const double _rateFruit  = 0.15;
-  static const double _rateDish   = 0.20;
+  static const double _rateHand = 0.10;
+  static const double _rateFruit = 0.15;
+  static const double _rateDish = 0.20;
   static const double _rateNormal = 0.25;
 
   static const _options = <_ActivityOption>[
-    _ActivityOption('Washing Hands',  'Hand',  _rateHand),
-    _ActivityOption('Washing Fruits', 'Fruit', _rateFruit),
-    _ActivityOption('Washing Dishes', 'Dish',  _rateDish),
+    _ActivityOption('Washing Hands', 'Hand', _rateHand),
+    _ActivityOption('Washing Potato', 'Potato', _rateFruit),
+    _ActivityOption('Washing Dishes', 'Dish', _rateDish),
   ];
 
   _ActivityOption _selected = _options.last; // default: Dishes
@@ -39,14 +39,14 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
   // Base fields
   late TextEditingController _activityCtrl; // kept for persistence
   late TextEditingController _durationCtrl; // seconds (int)
-  late TextEditingController _litersCtrl;   // Smart used (L) for this entry
+  late TextEditingController _litersCtrl; // Smart used (L) for this entry
 
   // Device optional fields (auto-filled; only normal & saved are shown)
-  late TextEditingController _objectCtrl;     // hidden field (kept for saving)
+  late TextEditingController _objectCtrl; // hidden field (kept for saving)
   late TextEditingController _tapOpenSecCtrl; // hidden field (kept for saving)
-  late TextEditingController _smartCtrl;      // hidden field (kept for saving)
-  late TextEditingController _normalCtrl;     // shown
-  late TextEditingController _savedCtrl;      // shown
+  late TextEditingController _smartCtrl; // hidden field (kept for saving)
+  late TextEditingController _normalCtrl; // shown
+  late TextEditingController _savedCtrl; // shown
 
   late DateTime _start;
   int? _entryId;
@@ -67,20 +67,34 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       _start = args.start;
 
       _activityCtrl = TextEditingController(text: args.activity);
-      _durationCtrl = TextEditingController(text: args.duration.inSeconds.toString());
-      _litersCtrl   = TextEditingController(text: args.liters.toStringAsFixed(3));
+      _durationCtrl = TextEditingController(
+        text: args.duration.inSeconds.toString(),
+      );
+      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(3));
 
-      _objectCtrl     = TextEditingController(text: (args.object ?? '').trim());
+      _objectCtrl = TextEditingController(text: (args.object ?? '').trim());
       _tapOpenSecCtrl = TextEditingController(
         text: args.tapOpenSec == null
             ? ''
             : (args.tapOpenSec! % 1 == 0
-                ? args.tapOpenSec!.toStringAsFixed(0)
-                : args.tapOpenSec!.toStringAsFixed(3)),
+                  ? args.tapOpenSec!.toStringAsFixed(0)
+                  : args.tapOpenSec!.toStringAsFixed(3)),
       );
-      _smartCtrl  = TextEditingController(text: args.smartGlobal  == null ? '' : args.smartGlobal!.toStringAsFixed(3));
-      _normalCtrl = TextEditingController(text: args.normalGlobal == null ? '' : args.normalGlobal!.toStringAsFixed(3));
-      _savedCtrl  = TextEditingController(text: args.savedGlobal  == null ? '' : args.savedGlobal!.toStringAsFixed(3));
+      _smartCtrl = TextEditingController(
+        text: args.smartGlobal == null
+            ? ''
+            : args.smartGlobal!.toStringAsFixed(3),
+      );
+      _normalCtrl = TextEditingController(
+        text: args.normalGlobal == null
+            ? ''
+            : args.normalGlobal!.toStringAsFixed(3),
+      );
+      _savedCtrl = TextEditingController(
+        text: args.savedGlobal == null
+            ? ''
+            : args.savedGlobal!.toStringAsFixed(3),
+      );
 
       _selected = _guessOption(args.activity);
     } else if (args is UsageDraft) {
@@ -88,14 +102,16 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       _start = args.start;
 
       _activityCtrl = TextEditingController(text: args.activity);
-      _durationCtrl = TextEditingController(text: args.duration.inSeconds.toString());
-      _litersCtrl   = TextEditingController(text: args.liters.toStringAsFixed(3));
+      _durationCtrl = TextEditingController(
+        text: args.duration.inSeconds.toString(),
+      );
+      _litersCtrl = TextEditingController(text: args.liters.toStringAsFixed(3));
 
-      _objectCtrl     = TextEditingController(text: '');
+      _objectCtrl = TextEditingController(text: '');
       _tapOpenSecCtrl = TextEditingController(text: '');
-      _smartCtrl      = TextEditingController(text: '');
-      _normalCtrl     = TextEditingController(text: '');
-      _savedCtrl      = TextEditingController(text: '');
+      _smartCtrl = TextEditingController(text: '');
+      _normalCtrl = TextEditingController(text: '');
+      _savedCtrl = TextEditingController(text: '');
 
       _selected = _guessOption(args.activity);
     } else {
@@ -108,14 +124,16 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       _start = d.start;
 
       _activityCtrl = TextEditingController(text: d.activity);
-      _durationCtrl = TextEditingController(text: d.duration.inSeconds.toString());
-      _litersCtrl   = TextEditingController(text: d.liters.toStringAsFixed(3));
+      _durationCtrl = TextEditingController(
+        text: d.duration.inSeconds.toString(),
+      );
+      _litersCtrl = TextEditingController(text: d.liters.toStringAsFixed(3));
 
-      _objectCtrl     = TextEditingController(text: '');
+      _objectCtrl = TextEditingController(text: '');
       _tapOpenSecCtrl = TextEditingController(text: '');
-      _smartCtrl      = TextEditingController(text: '');
-      _normalCtrl     = TextEditingController(text: '');
-      _savedCtrl      = TextEditingController(text: '');
+      _smartCtrl = TextEditingController(text: '');
+      _normalCtrl = TextEditingController(text: '');
+      _savedCtrl = TextEditingController(text: '');
 
       _selected = _guessOption(d.activity);
     }
@@ -148,7 +166,8 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
   _ActivityOption _guessOption(String activity) {
     final v = activity.toLowerCase();
     if (v.contains('hand')) return _options[0];
-    if (v.contains('fruit') || v.contains('vegetable')) return _options[1];
+    if (v.contains('potato') || v.contains('fruit') || v.contains('vegetable'))
+      return _options[1];
     if (v.contains('dish') || v.contains('plate')) return _options[2];
     return _options[2]; // default Dishes
   }
@@ -210,12 +229,14 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       _litersCtrl.text = _fmt3(smart);
 
       // Hidden device snapshot mirrors manual add
-      _tapOpenSecCtrl.text = secs % 1 == 0 ? secs.toStringAsFixed(0) : _fmt3(secs);
-      _smartCtrl.text  = _fmt3(smart);
+      _tapOpenSecCtrl.text = secs % 1 == 0
+          ? secs.toStringAsFixed(0)
+          : _fmt3(secs);
+      _smartCtrl.text = _fmt3(smart);
 
       // Visible in panel
       _normalCtrl.text = _fmt3(normal);
-      _savedCtrl.text  = _fmt3(saved);
+      _savedCtrl.text = _fmt3(saved);
 
       if (_objectCtrl.text.trim().isEmpty) {
         _objectCtrl.text = _selected.object;
@@ -241,11 +262,11 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
       _tapOpenSecCtrl.text = secs.isFinite
           ? (secs % 1 == 0 ? secs.toStringAsFixed(0) : _fmt3(secs))
           : '';
-      _smartCtrl.text  = _fmt3(smart.isFinite ? smart : 0.0);
+      _smartCtrl.text = _fmt3(smart.isFinite ? smart : 0.0);
 
       // Visible in panel
       _normalCtrl.text = _fmt3(normal.isFinite ? normal : 0.0);
-      _savedCtrl.text  = _fmt3(saved.isFinite ? saved : 0.0);
+      _savedCtrl.text = _fmt3(saved.isFinite ? saved : 0.0);
 
       if (_objectCtrl.text.trim().isEmpty) {
         _objectCtrl.text = _selected.object;
@@ -309,7 +330,9 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                     _smallField(
                       'normalWaterUsed (L)',
                       _normalCtrl,
-                      keyboard: const TextInputType.numberWithOptions(decimal: true),
+                      keyboard: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       readOnly: true, // 🔒 locked
                     ),
                     const SizedBox(height: 8),
@@ -317,7 +340,9 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                     _smallField(
                       'waterSaved (L)',
                       _savedCtrl,
-                      keyboard: const TextInputType.numberWithOptions(decimal: true),
+                      keyboard: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       readOnly: true, // 🔒 locked
                     ),
                   ],
@@ -336,14 +361,17 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                   ),
                   onPressed: () async {
                     final secs = int.tryParse(_durationCtrl.text.trim()) ?? 0;
-                    final liters = double.tryParse(_litersCtrl.text.trim()) ?? 0;
+                    final liters =
+                        double.tryParse(_litersCtrl.text.trim()) ?? 0;
                     final activity = _activityCtrl.text.trim().isEmpty
                         ? _selected.activity
                         : _activityCtrl.text.trim();
 
                     if (activity.isEmpty || secs <= 0 || liters <= 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please enter valid values')),
+                        const SnackBar(
+                          content: Text('Please enter valid values'),
+                        ),
                       );
                       return;
                     }
@@ -363,7 +391,9 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                       liters: liters,
 
                       // Hidden but still saved for parity with BLE entries
-                      object: _objectCtrl.text.trim().isEmpty ? null : _objectCtrl.text.trim(),
+                      object: _objectCtrl.text.trim().isEmpty
+                          ? null
+                          : _objectCtrl.text.trim(),
                       tapOpenSec: _num(_tapOpenSecCtrl),
                       smartGlobal: _num(_smartCtrl),
                       normalGlobal: _num(_normalCtrl),
@@ -379,7 +409,9 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(isUpdate ? 'Usage updated' : 'Usage saved'),
+                        content: Text(
+                          isUpdate ? 'Usage updated' : 'Usage saved',
+                        ),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
@@ -429,31 +461,31 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
   }
 
   Widget _infoRow(String label, String value) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          gradient: AppGradient.primary,
-          borderRadius: BorderRadius.circular(12),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    decoration: BoxDecoration(
+      gradient: AppGradient.primary,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        child: Row(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.black87,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
+        const Spacer(),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w800,
+          ),
         ),
-      );
+      ],
+    ),
+  );
 
   Widget _field(
     String label,
@@ -499,7 +531,10 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
       ),
     );
     // When locked, ignore pointer so it can't be focused/edited.
@@ -509,7 +544,18 @@ class _WashingDetailState extends ConsumerState<WashingDetailScreen> {
   String _format(DateTime dt) {
     String two(int n) => n.toString().padLeft(2, '0');
     const months = [
-      'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${two(dt.hour)}:${two(dt.minute)}, ${dt.day} ${months[dt.month - 1]}';
   }
