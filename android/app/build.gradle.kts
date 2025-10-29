@@ -11,14 +11,14 @@ android {
     namespace = "com.example.qatrah_app"
 
     // Explicit SDK levels
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         // TODO: change to your real package id before release
         applicationId = "com.example.qatrah_app"
 
-        minSdk = 21
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
 
         // Delegate versioning to Flutter
         versionCode = flutter.versionCode
